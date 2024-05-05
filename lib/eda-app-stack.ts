@@ -19,6 +19,7 @@ export class EDAAppStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
+  // create an S3 bucket
     const imagesBucket = new s3.Bucket(this, "images", {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
@@ -139,11 +140,13 @@ export class EDAAppStack extends cdk.Stack {
     // Subscribers
     handleImageTopic.addSubscription(
       new subs.LambdaSubscription(processDeleteFn, {
-        filterPolicy: {
-          comment_type: sns.SubscriptionFilter.stringFilter({
-            allowlist: ["Delete"],
-          }),
-        },
+        filterPolicyWithMessageBody: {
+          Records: sns.FilterOrPolicy.policy({
+            eventName: sns.FilterOrPolicy.filter(sns.SubscriptionFilter.stringFilter({
+              matchPrefixes: ['ObjectRemoved:Delete']
+            }))
+          })
+        }
       })
     );
     handleImageTopic.addSubscription(
@@ -188,7 +191,6 @@ export class EDAAppStack extends cdk.Stack {
     });
 
     processImageFn.addEventSource(newImageEventSource);
-    confirmationMailerFn.addEventSource(newImageEventSource);
 
     // DLQ --> Lambda
     rejectionMailerFn.addEventSource(
