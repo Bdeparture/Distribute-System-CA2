@@ -8,6 +8,8 @@ import * as sqs from "aws-cdk-lib/aws-sqs";
 import * as sns from "aws-cdk-lib/aws-sns";
 import * as subs from "aws-cdk-lib/aws-sns-subscriptions";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import { Duration, RemovalPolicy } from "aws-cdk-lib";
 
 import { Construct } from "constructs";
 // import * as sqs from 'aws-cdk-lib/aws-sqs';
@@ -24,7 +26,7 @@ export class EDAAppStack extends cdk.Stack {
 
     // Integration infrastructure
     const badImageQueue = new sqs.Queue(this, "bad-orders-q", {
-      receiveMessageWaitTime: cdk.Duration.seconds(15),
+      retentionPeriod: Duration.minutes(30),
     });
 
     const imageProcessQueue = new sqs.Queue(this, "img-created-queue", {
@@ -32,7 +34,7 @@ export class EDAAppStack extends cdk.Stack {
       deadLetterQueue: {
         queue: badImageQueue,
         // # of rejections by consumer (lambda function)
-        maxReceiveCount: 2,    // Changed
+        maxReceiveCount: 1,    // Changed
       },
     });
 
@@ -51,6 +53,7 @@ export class EDAAppStack extends cdk.Stack {
         timeout: cdk.Duration.seconds(15),
         memorySize: 128,
         environment: {
+          REGION: 'eu-west-1',
           DLQ_URL: badImageQueue.queueUrl,
         },
       }
@@ -94,6 +97,13 @@ export class EDAAppStack extends cdk.Stack {
       new subs.LambdaSubscription(confirmationMailerFn)
     );
 
+    // DynamoDB Table
+    const imageTable = new dynamodb.Table(this, 'ImageTable', {
+      partitionKey: { name: 'ImageId', type: dynamodb.AttributeType.STRING },
+      removalPolicy: cdk.RemovalPolicy.DESTROY, // Only for demonstration purpose. Do not use in production.
+    });
+
+
     // SQS --> Lambda
     const newImageEventSource = new events.SqsEventSource(imageProcessQueue, {
       batchSize: 5,
@@ -108,7 +118,7 @@ export class EDAAppStack extends cdk.Stack {
         maxBatchingWindow: cdk.Duration.seconds(10),
       })
     );
-    
+
     processImageFn.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
@@ -141,14 +151,27 @@ export class EDAAppStack extends cdk.Stack {
       })
     );
 
+    // Dynamo DB Permissions
+    processImageFn.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ["dynamodb:PutItem", "dynamodb:GetItem"],
+      resources: [imageTable.tableArn],
+    }));
+
+    processImageFn.addEnvironment("DYNAMODB_TABLE_NAME", imageTable.tableName);
+    imageTable.grantReadWriteData(processImageFn);
     // Permissions
 
     imagesBucket.grantRead(processImageFn);
+    imageTable.grantReadWriteData(processImageFn);
 
     // Output
 
     new cdk.CfnOutput(this, "bucketName", {
       value: imagesBucket.bucketName,
+    });
+    new cdk.CfnOutput(this, "imageItemsTableName", {
+      value: imageTable.tableName,
     });
   }
 
