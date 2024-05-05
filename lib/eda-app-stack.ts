@@ -67,7 +67,7 @@ export class EDAAppStack extends cdk.Stack {
     const confirmationMailerFn = new lambdanode.NodejsFunction(this, "confirmationMailerFunction", {
       runtime: lambda.Runtime.NODEJS_16_X,
       memorySize: 1024,
-      timeout: cdk.Duration.seconds(3),
+      timeout: cdk.Duration.seconds(15),
       entry: `${__dirname}/../lambdas/confirmationMailer.ts`,
     });
 
@@ -84,6 +84,16 @@ export class EDAAppStack extends cdk.Stack {
         },
       }
     );
+
+    const updateTableFn = new lambdanode.NodejsFunction(this, "updateTableFn", {
+      runtime: lambda.Runtime.NODEJS_18_X,
+      entry: `${__dirname}/../lambdas/updateTable.ts`,
+      timeout: cdk.Duration.seconds(15),
+      memorySize: 128,
+      environment: {
+        DYNAMODB_TABLE_NAME: imageTable.tableName,
+      },
+    });
 
     const deleteMailerFn = new lambdanode.NodejsFunction(
       this,
@@ -127,7 +137,24 @@ export class EDAAppStack extends cdk.Stack {
     );
 
     // Subscribers
-
+    handleImageTopic.addSubscription(
+      new subs.LambdaSubscription(processDeleteFn, {
+        filterPolicy: {
+          comment_type: sns.SubscriptionFilter.stringFilter({
+            allowlist: ["Delete"],
+          }),
+        },
+      })
+    );
+    handleImageTopic.addSubscription(
+      new subs.LambdaSubscription(updateTableFn, {
+        filterPolicy: {
+          comment_type: sns.SubscriptionFilter.stringFilter({
+            allowlist: ["Caption"],
+          }),
+        },
+      })
+    );
 
     //SNS
     newImageTopic.addSubscription(
@@ -138,9 +165,6 @@ export class EDAAppStack extends cdk.Stack {
       new subs.SqsSubscription(badImageQueue)
     );
 
-    handleImageTopic.addSubscription(
-      new subs.LambdaSubscription(processDeleteFn)
-    );
     //direct subscriber to the topic
     newImageTopic.addSubscription(
       new subs.LambdaSubscription(confirmationMailerFn)
@@ -165,6 +189,8 @@ export class EDAAppStack extends cdk.Stack {
 
     processImageFn.addEventSource(newImageEventSource);
     confirmationMailerFn.addEventSource(newImageEventSource);
+
+    // DLQ --> Lambda
     rejectionMailerFn.addEventSource(
       new events.SqsEventSource(badImageQueue, {
         batchSize: 5,
@@ -216,6 +242,15 @@ export class EDAAppStack extends cdk.Stack {
       })
     );
 
+    updateTableFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["dynamodb:UpdateItem"],
+        resources: [imageTable.tableArn],
+      })
+    );
+
+
     processDeleteFn.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
@@ -238,6 +273,7 @@ export class EDAAppStack extends cdk.Stack {
     imagesBucket.grantRead(processImageFn);
     imageTable.grantReadWriteData(processImageFn);
     imageTable.grantReadWriteData(processDeleteFn);
+    imageTable.grantReadWriteData(updateTableFn);
 
     // Output
 
@@ -246,6 +282,9 @@ export class EDAAppStack extends cdk.Stack {
     });
     new cdk.CfnOutput(this, "imageItemsTableName", {
       value: imageTable.tableName,
+    });
+    new cdk.CfnOutput(this, "newImageTopicArn", {
+      value: newImageTopic.topicArn,
     });
     new cdk.CfnOutput(this, "handleImageTopicArn", {
       value: handleImageTopic.topicArn,
