@@ -28,11 +28,34 @@ export const handler: SQSHandler = async (event) => {
         const srcBucket = s3e.bucket.name;
         // Object key may have spaces or unicode non-ASCII characters.
         const srcKey = decodeURIComponent(s3e.object.key.replace(/\+/g, " "));
-
+        let origimage = null;
+        console.log("srcKey: ", srcKey)
+        
         // Check the file extension
-        const extension = srcKey.match(/\.([^.]*)$/)![1].toLowerCase();
-        if (extension !== "jpeg" && extension !== "png") {
-          throw new Error("Unsupported file extension");
+        if (!srcKey.endsWith(".jpeg") && !srcKey.endsWith(".png")) {
+          const errorMessage = JSON.stringify({
+            bucket: srcBucket,
+            key: srcKey,
+            error: "Unsupported file extension",
+          });
+
+          await sqs.send(new SendMessageCommand({
+            QueueUrl: process.env.DLQ_URL,
+            MessageBody: errorMessage,
+          }));
+          return;
+        }
+
+        try {
+          // Download the image from the S3 source bucket.
+          const params: GetObjectCommandInput = {
+            Bucket: srcBucket,
+            Key: srcKey,
+          };
+          origimage = await s3.send(new GetObjectCommand(params));
+          // Process the image ......
+        } catch (error) {
+          console.log(error);
         }
 
         // Add to DynamoDB
