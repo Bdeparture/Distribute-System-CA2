@@ -13,7 +13,7 @@ export const handler: SNSHandler = async (event) => {
     await ddbDocClient.send(
       new UpdateCommand({
         TableName: process.env.DYNAMODB_TABLE_NAME,
-        Key: { filename: messageName },
+        Key: { ImageId: messageName },
         UpdateExpression: "SET description = :d",
         ExpressionAttributeValues: {
           ":d": messageDescription,
