@@ -19,9 +19,9 @@ type ContactDetails = {
   message: string;
 };
 
-const client = new SESClient({ region: SES_REGION});
+const client = new SESClient({ region: SES_REGION });
 
-export const handler: SQSHandler = async (event: any) => {
+export const handler: SQSHandler = async (event) => {
   console.log("Event ", JSON.stringify(event));
   for (const record of event.Records) {
     const recordBody = JSON.parse(record.body);
@@ -38,7 +38,7 @@ export const handler: SQSHandler = async (event: any) => {
           const { name, email, message }: ContactDetails = {
             name: "The Photo Album",
             email: SES_EMAIL_FROM,
-            message: `We received your Image. Its URL is s3://${srcBucket}/${srcKey}`,
+            message: `Your image format is incorrect. Please ensure that the image file is in either JPEG or PNG format. Its URL is s3://${srcBucket}/${srcKey}`,
           };
           const params = sendEmailParams({ name, email, message });
           await client.send(new SendEmailCommand(params));
@@ -79,26 +79,26 @@ function sendEmailParams({ name, email, message }: ContactDetails) {
 
 function getHtmlContent({ name, email, message }: ContactDetails) {
   return `
-    <html>
-      <body>
-        <h2>Sent from: </h2>
-        <ul>
-          <li style="font-size:18px">👤 <b>${name}</b></li>
-          <li style="font-size:18px">✉️ <b>${email}</b></li>
-        </ul>
-        <p style="font-size:18px">${message}</p>
-      </body>
-    </html> 
-  `;
+      <html>
+        <body>
+          <h2>Sent from: </h2>
+          <ul>
+            <li style="font-size:18px">👤 <b>${name}</b></li>
+            <li style="font-size:18px">✉️ <b>${email}</b></li>
+          </ul>
+          <p style="font-size:18px">${message}</p>
+        </body>
+      </html> 
+    `;
 }
 
- // For demo purposes - not used here.
+// For demo purposes - not used here.
 function getTextContent({ name, email, message }: ContactDetails) {
   return `
-    Received an Email. 📬
-    Sent from:
-        👤 ${name}
-        ✉️ ${email}
-    ${message}
-  `;
+      Received an Email. 📬
+      Sent from:
+          👤 ${name}
+          ✉️ ${email}
+      ${message}
+    `;
 }
